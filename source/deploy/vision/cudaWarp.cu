@@ -10,7 +10,7 @@ inline __device__ __host__ int iDivUp(int a, int b) {
 
 __global__ void gpuBilinearWarpAffine(uint8_t* input, int inputWidth, int inputHeight,
                                       float* output, int outputWidth, int outputHeight,
-                                      float3 m0, float3 m1) {
+                                      float3 m0, float3 m1, float fill_value) {
     const int x             = blockDim.x * blockIdx.x + threadIdx.x;
     const int y             = blockDim.y * blockIdx.y + threadIdx.y;
     const int inputLineSize = inputWidth * 3;
@@ -23,7 +23,7 @@ __global__ void gpuBilinearWarpAffine(uint8_t* input, int inputWidth, int inputH
     float inputY = m1.x * x + m1.y * y + m1.z;
 
     // Initialize to constant value for out of range
-    float c0 = 0.0f, c1 = 0.0f, c2 = 0.0f;
+    float c0 = fill_value, c1 = fill_value, c2 = fill_value;
 
     // Precompute interpolation coefficients and boundary checks
     if (inputX > -1 && inputX < inputWidth && inputY > -1 && inputY < inputHeight) {
@@ -99,7 +99,9 @@ void cudaWarpAffine(uint8_t* input, uint32_t inputWidth, uint32_t inputHeight,
     // launch kernel
     const dim3 blockDim(8, 8);
     const dim3 gridDim(iDivUp(outputWidth, blockDim.x), iDivUp(outputHeight, blockDim.y));
-    gpuBilinearWarpAffine<<<gridDim, blockDim, 0, stream>>>(input, inputWidth, inputHeight, output, outputWidth, outputHeight, matrix[0], matrix[1]);
+    gpuBilinearWarpAffine<<<gridDim, blockDim, 0, stream>>>(
+        input, inputWidth, inputHeight, output, outputWidth, outputHeight, matrix[0], matrix[1], 0.0f
+    );
 }
 
 }  // namespace deploy

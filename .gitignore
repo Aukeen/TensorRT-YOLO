@@ -1,6 +1,7 @@
 # Xmake Cache
 .xmake/
 build/
+cmake-build*/
 
 # VSCode Cache
 .vscode
