@@ -50,9 +50,13 @@ public:
     /**
      * @brief Constructs an EngineContext object.
      */
-    EngineContext() {
+    EngineContext()
+#ifndef HIDDEN_IMPLEMENTATION
+    {
         initLibNvInferPlugins(&mLogger, ""); /**< Initializes TensorRT plugins with custom logger. */
     }
+#endif
+    ;
 
     EngineContext(const EngineContext&)            = default;
     EngineContext(EngineContext&&)                 = delete;
@@ -61,9 +65,13 @@ public:
     /**
      * @brief Destroys the EngineContext object and releases associated resources.
      */
-    ~EngineContext() {
+    ~EngineContext()
+#ifndef HIDDEN_IMPLEMENTATION
+    {
         destroy(); /**< Destroys the EngineContext object and releases associated resources. */
     }
+#endif
+    ;
 
     /**
      * @brief Constructs the engine and execution context from serialized data.

@@ -65,11 +65,15 @@ struct DEPLOY_DECL Image {
      * @throws std::invalid_argument If width or height is negative.
      */
     Image(void* rgbPtr, int width, int height)
+#ifndef HIDDEN_IMPLEMENTATION
         : rgbPtr(rgbPtr), width(width), height(height) {
         if (width < 0 || height < 0) {
             throw std::invalid_argument("Width and height must be non-negative");
         }
     }
+#else
+    ;
+#endif
 };
 
 }  // namespace deploy

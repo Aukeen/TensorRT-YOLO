@@ -100,6 +100,7 @@ public:
      * @param bytes Total size of the tensor's data in bytes.
      */
     TensorInfo(const char* name, const nvinfer1::Dims& dims, bool input, size_t typeSz, int64_t bytes)
+#ifndef HIDDEN_IMPLEMENTATION
         : name(name),
           dims(dims),
           input(input),
@@ -107,13 +108,21 @@ public:
           tensor(Tensor()),
           bytes(bytes) {
     }
+#else
+    ;
+#endif
 
     /**
      * @brief Updates the total size of the tensor's data based on its dimensions and data type size.
      */
-    void update() {
+    void update()
+#ifndef HIDDEN_IMPLEMENTATION
+    {
         bytes = calculateVolume(dims) * typeSz;
     }
+#else
+    ;
+#endif
 };
 
 }  // namespace deploy

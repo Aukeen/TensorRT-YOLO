@@ -37,3 +37,5 @@ tensorrt_yolo/c_lib_wrap.py
 # build libs
 lib/
 tensorrt_yolo/libs/
+
+tests/

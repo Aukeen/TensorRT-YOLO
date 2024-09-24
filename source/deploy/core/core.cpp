@@ -26,6 +26,17 @@ void TrtLogger::log(nvinfer1::ILogger::Severity severity, const char* msg) noexc
     std::cerr << msg << '\n';
 }
 
+#ifdef HIDDEN_IMPLEMENTATION
+EngineContext::EngineContext(){
+    initLibNvInferPlugins(&mLogger, ""); /**< Initializes TensorRT plugins with custom logger. */
+}
+EngineContext::~EngineContext()
+{
+    std::cout << "~EngineContext()" << std::endl;
+    destroy(); /**< Destroys the EngineContext object and releases associated resources. */
+}
+#endif
+
 void EngineContext::destroy() {
     mContext.reset();
     mEngine.reset();

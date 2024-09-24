@@ -19,6 +19,10 @@ __global__ void gpuBilinearWarpAffine(uint8_t* input, int inputWidth, int inputH
     if (x >= outputWidth || y >= outputHeight)
         return;
 
+    // Compute the pixel coordinates in the input image
+    //                / m0.x, m1.x \
+    //  [x, y, 1]  @  | m0.y, m1.y |
+    //                \ m0.z, m1.z /
     float inputX = m0.x * x + m0.y * y + m0.z;
     float inputY = m1.x * x + m1.y * y + m1.z;
 
@@ -63,8 +67,8 @@ __global__ void gpuBilinearWarpAffine(uint8_t* input, int inputWidth, int inputH
 
     // Reorder RGB to RRRGGGBBB
     int index                      = y * outputWidth + x;
-    output[index]                  = c0;
-    output[index + outputArea]     = c1;
+    output[index                 ] = c0;
+    output[index + outputArea    ] = c1;
     output[index + 2 * outputArea] = c2;
 }
 
