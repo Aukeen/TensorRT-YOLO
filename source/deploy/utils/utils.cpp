@@ -10,7 +10,11 @@ namespace deploy {
 std::vector<char> loadFile(const std::string& filePath) {
     std::ifstream file(filePath, std::ios::binary);  // Open file in binary mode
     if (!file.is_open()) {
-        throw std::runtime_error("Error opening file: " + filePath);
+        std::string msg = filePath;
+        if (filePath.empty()) {
+            msg = "(empty path)";
+        }
+        throw std::runtime_error("Error opening file: " + msg);
     }
 
     // Get file size

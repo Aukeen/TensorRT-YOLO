@@ -1,7 +1,7 @@
 # FindTensorRT.cmake - Locate the TensorRT libraries and headers
 # This module defines the following variables:
 #   TensorRT_FOUND        - True if TensorRT was found
-#   TensorRT_INCLUDE_DIRS - Include directories for TensorRT headers
+#   TensorRT_INCLUDE_DIR - Include directories for TensorRT headers
 #   TensorRT_LIBRARIES    - Link libraries for TensorRT
 
 # 定义变量，用于存储库的路径和目标信息

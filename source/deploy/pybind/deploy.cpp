@@ -10,6 +10,10 @@
 #include "deploy/vision/detection.hpp"
 #include "deploy/vision/result.hpp"
 
+#ifndef PY_PKG_NAME
+#define PY_PKG_NAME pydeploy
+#endif
+
 namespace deploy {
 
 // Convert NumPy array to Image object
@@ -169,7 +173,7 @@ void BindDetection(pybind11::module &m) {
 }
 
 // Define the pydeploy module
-PYBIND11_MODULE(pydeploy, m) {
+PYBIND11_MODULE(PY_PKG_NAME, m) {
     m.doc() = "TensorRT-YOLO Python bindings using Pybind11";
 
     pybind11::module timer_module = m.def_submodule("timer", "Timer module of TensorRT-YOLO.");

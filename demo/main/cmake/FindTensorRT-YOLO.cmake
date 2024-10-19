@@ -1,7 +1,7 @@
 # FindTensorRT-YOLO.cmake - Locate the TensorRT-YOLO libraries and headers
 # This module defines the following variables:
 #   TensorRT-YOLO_FOUND        - True if TensorRT-YOLO was found
-#   TensorRT-YOLO_INCLUDE_DIRS - Include directories for TensorRT-YOLO headers
+#   TensorRT-YOLO_INCLUDE_DIR - Include directories for TensorRT-YOLO headers
 #   TensorRT-YOLO_LIBRARIES    - Link libraries for TensorRT-YOLO
 
 # 定义变量，用于存储库的路径和目标信息

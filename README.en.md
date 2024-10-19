@@ -62,17 +62,24 @@ TensorRT-YOLO is an inference acceleration project that supports YOLOv3, YOLOv5,
 
 - [【TensorRT-YOLO】3.0 Docker 部署演示](https://www.bilibili.com/video/BV1Jr42137EP)
 
-## <div align="center">☕ Buy the Author a Coffee</div>
+[//]: # (## <div align="center">☕ Buy the Author a Coffee</div>)
 
-Open source projects require effort. If this project has been helpful to you, consider buying the author a coffee. Your support is the greatest motivation for the developer to keep maintaining the project!
+[//]: # ()
+[//]: # (Open source projects require effort. If this project has been helpful to you, consider buying the author a coffee. Your support is the greatest motivation for the developer to keep maintaining the project!)
 
-> It's recommended to use Alipay, as WeChat doesn't provide the avatar. Please note "TensorRT-YOLO" in the transfer.
+[//]: # ()
+[//]: # (> It's recommended to use Alipay, as WeChat doesn't provide the avatar. Please note "TensorRT-YOLO" in the transfer.)
 
-<div align="center">
-    <p>
-        <img width="500px" src="assets/sponsor.png"></a>
-    </p>
-</div>
+[//]: # ()
+[//]: # (<div align="center">)
+
+[//]: # (    <p>)
+
+[//]: # (        <img width="500px" src="assets/sponsor.png"></a>)
+
+[//]: # (    </p>)
+
+[//]: # (</div>)
 
 ## <div align="center">📄 License</div>
 

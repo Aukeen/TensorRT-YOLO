@@ -39,3 +39,5 @@ lib/
 tensorrt_yolo/libs/
 
 tests/
+
+*.pyd

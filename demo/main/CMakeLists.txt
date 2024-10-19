@@ -88,7 +88,8 @@ if (WIN32 OR LINUX)
             ${OpenCV_LIBS}
             ${CUDAToolkit_LIBRARY_DIR}/*.lib
             ${TensorRT_LIBRARIES}
-            ${TensorRT-YOLO_LIBRARIES})
+            ${TensorRT-YOLO_LIBRARIES}
+    )
     message(STATUS "OpenCV_LIBS: ${OpenCV_LIBS}")
     message(STATUS "TensorRT-YOLO_LIBRARIES: ${TensorRT-YOLO_LIBRARIES}")
 else ()

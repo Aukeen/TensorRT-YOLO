@@ -123,6 +123,7 @@ def add_dll_search_dir(dir_path: Path) -> None:
 
 if os.name == "nt":
     libs_dir: Dict[str, Path] = {}
+    # TODO: cmake阶段将第三方库复制到./libs路径下，统一在该文件夹下搜索？
     need_lib_dirs = [Path(r"${CUDA}"), Path(r"${TensorRT}")]
     sys_paths = [Path(p) for p in os.environ["PATH"].strip().split(";")]
 

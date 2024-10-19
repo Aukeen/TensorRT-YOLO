@@ -10,7 +10,7 @@ set(CMAKE_BUILD_TYPE RELEASE CACHE STRING "Build type")
 set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries")
 set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/install" CACHE PATH "install path" FORCE)
 set(HIDDEN_DETAILS ON CACHE BOOL "Hidden details")
-set(BUILD_PYTHON_API ON CACHE BOOL "Build Python API")
+set(BUILD_PYTHON_API OFF CACHE BOOL "Build Python API")
 
 # ----------------- Import extra module ----------------- #
 # 设置CMake模块路径，用于查找额外的CMake模块
@@ -31,24 +31,24 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # -------------------- Compile CUDA --------------------- #
 include(CheckLanguage)
 check_language(CUDA) # CUDA版本与MSVC版本必须匹配，否则会找不到CUDA编译器
-if(CMAKE_CUDA_COMPILER)
+if (CMAKE_CUDA_COMPILER)
     # 为整个项目设置目标架构，要在enable_language(CUDA)之前设置
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
         set(CMAKE_CUDA_ARCHITECTURES 80 CACHE STRING "CUDA architectures" FORCE)
-    endif()
+    endif ()
 
     # CUDA 语言不是默认启用的，需要手动启用
     # 注意：使用MSVC编译器时，CUDA的版本必须与之匹配，不然会发生找不到CUDA编译器的问题
     enable_language(CUDA)
 
     # 设置 CUDA 标准
-    if(NOT DEFINED CMAKE_CUDA_STANDARD)
+    if (NOT DEFINED CMAKE_CUDA_STANDARD)
         set(CMAKE_CUDA_STANDARD 17)
         set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-    endif()
-else()
+    endif ()
+else ()
     message(FATAL_ERROR "[ERROR] CUDA compiler not found.")
-endif()
+endif ()
 
 # 代码中如果需要使用到 CUDA Toolkit 提供的库，比如：
 #   - CUDA 运行时库（如 cudart）
@@ -56,10 +56,11 @@ endif()
 #   - 其他 CUDA 工具库（如 cuBLAS、cuFFT、cuRAND 等）
 # 那么，就需要使用 find_package(CUDAToolkit REQUIRED) 来确保这些库被正确找到并链接到你的目标中；如果只需要编译
 # 一些简单的 CUDA 程序，不依赖于 CUDA Toolkit 中的任何特定库，那么仅使用 enable_language(CUDA) 可能就足够了。
-if(NOT CUDAToolkit_FOUND)
+if (NOT CUDAToolkit_FOUND)
     message(STATUS "[message] To find CUDAToolkit ......")
     find_package(CUDAToolkit REQUIRED) # or include(FindCUDAToolkit)
-endif()
+    set(CUDA ${CUDAToolkit_LIBRARY_ROOT})
+endif ()
 
 add_definitions(-DUSE_CUDA) # 添加宏定义，用于在代码中判断是否使用 CUDA
 
@@ -67,10 +68,13 @@ show_cuda_info()
 # -------------------- Compile CUDA --------------------- #
 
 # ---------------------- TensorRT ----------------------- #
+if (NOT TensorRT_ROOT)
 set(TensorRT_ROOT "" CACHE PATH "TensorRT install directory")
+endif ()
 if (TensorRT_ROOT)
     find_package(TensorRT REQUIRED)
     include_directories(${TensorRT_INCLUDE_DIR})
+    set(TensorRT ${TensorRT_ROOT})
 else ()
     message(FATAL_ERROR "[ERROR] TensorRT_ROOT not set.")
 endif ()
@@ -90,12 +94,14 @@ endif ()
 # ----------------------- Python ------------------------ #
 
 # ---------------------- pybind11 ----------------------- #
-if(NOT DEFINED pybind11_FOUND)
+if (NOT DEFINED pybind11_FOUND)
+    if (NOT pybind11_DIR)
+        set(pybind11_DIR "" CACHE PATH "pybind11 install directory")
+    endif ()
     set(PYBIND11_PYTHON_VERSION 3.10)
-    set(pybind11_DIR "" CACHE PATH "pybind11 install directory")
     find_package(pybind11 CONFIG REQUIRED)
     message(STATUS "pybind11_INCLUDE_DIRS: ${pybind11_INCLUDE_DIRS}") # Directories where pybind11 and python headers are located.
-endif()
+endif ()
 # ---------------------- pybind11 ----------------------- #
 endif () # BUILD_PYTHON_API
 
@@ -107,6 +113,11 @@ file(GLOB_RECURSE SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/source/deploy/*/*.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/source/deploy/*.cu
         ${CMAKE_CURRENT_SOURCE_DIR}/source/deploy/*/*.cu)
+
+if (NOT BUILD_PYTHON_API)
+    file(GLOB_RECURSE PYBIND_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/source/deploy/pybind/*.cpp)
+    list(REMOVE_ITEM SOURCES ${PYBIND_SRCS})
+endif () # NOT BUILD_PYTHON_API
 
 add_library(${PROJECT_NAME}_obj OBJECT ${SOURCES})
 set_target_properties(${PROJECT_NAME}_obj
@@ -132,7 +143,7 @@ if (BUILD_SHARED_LIBS)
             PROPERTIES
             OUTPUT_NAME ${PROJECT_NAME}
     )
-endif()
+endif ()
 
 target_include_directories(${PROJECT_NAME}_obj PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -142,6 +153,8 @@ target_include_directories(${PROJECT_NAME}_obj PUBLIC
 if (BUILD_PYTHON_API)
 # pybind11
 set(PY_PKG_NAME pydeploy)
+add_definitions(-DPY_PKG_NAME=${PY_PKG_NAME})
+
 pybind11_add_module(${PY_PKG_NAME} MODULE $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
 # C++模块用到了第三方库的动态链接库，可能会在使用.pyd文件时遇到：
 # ImportError: DLL load failed while importing XXX: 找不到指定的模块。
@@ -153,6 +166,18 @@ target_include_directories(${PY_PKG_NAME} PUBLIC
 
 target_include_directories(${PROJECT_NAME}_obj PRIVATE
         ${pybind11_INCLUDE_DIRS}) # pybind11是head-only的，因此只需要导入头文件就可以了
+
+string(CONCAT PYTHON_VER_STR ${Python_VERSION_MAJOR} ${Python_VERSION_MINOR})
+
+if (WIN32)
+# 将生成的.pyd文件复制到libs目录下
+add_custom_command(
+        TARGET ${PY_PKG_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tensorrt_yolo/libs"
+)
+endif () # WIN32
+configure_file(${PROJECT_SOURCE_DIR}/tensorrt_yolo/c_lib_wrap.py.in ${PROJECT_SOURCE_DIR}/tensorrt_yolo/c_lib_wrap.py)
 endif () # BUILD_PYTHON_API
 # ----------------- Source file include ----------------- #
 
@@ -170,27 +195,29 @@ endif ()
 if (WIN32 OR LINUX)
     # 包含CUDAToolkit的头文件路径
     # 代码里需要CUDA的API所以对象库需要导入相关头文件
-    target_include_directories(${PROJECT_NAME}_obj PRIVATE
-            ${CUDAToolkit_INCLUDE_DIRS})
-
-    target_link_libraries(${PY_PKG_NAME}
-            PRIVATE
-            ${CUDAToolkit_LIBRARY_DIR}/*.lib
-            ${TensorRT_LIBRARIES}
-    )
+    target_include_directories(${PROJECT_NAME}_obj PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
 
     target_link_libraries(${PROJECT_NAME}_static
             PRIVATE
             ${CUDAToolkit_LIBRARY_DIR}/*.lib
             ${TensorRT_LIBRARIES}
-            ${Python_LIBRARIES})
-    if (BUILD_SHARED_LIBS)
-    target_link_libraries(${PROJECT_NAME}_shared
+            ${Python_LIBRARIES}
+    )
+if (BUILD_SHARED_LIBS)
+    target_link_libraries(${PROJECT_NAME}_shared PRIVATE
+            ${CUDAToolkit_LIBRARY_DIR}/*.lib
+            ${TensorRT_LIBRARIES}
+            ${Python_LIBRARIES}
+    )
+endif ()
+if (BUILD_PYTHON_API)
+    target_link_libraries(${PY_PKG_NAME}
             PRIVATE
             ${CUDAToolkit_LIBRARY_DIR}/*.lib
             ${TensorRT_LIBRARIES}
-            ${Python_LIBRARIES})
-    endif ()
+            ${Python_LIBRARIES}
+    )
+endif ()
 else ()
     message(FATAL_ERROR "[ERROR] Current platform is no support.")
 endif ()
