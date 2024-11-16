@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Optional, Tuple
 
+import onnx
 from loguru import logger
 
 try:
@@ -19,7 +20,7 @@ except ImportError:
     logger.error('Ultralytics not found, plaese install Ultralytics.' 'for example: `pip install ultralytics`.')
     sys.exit(1)
 
-from .head import UltralyticsDetect, UltralyticsOBB, YOLODetect, v10Detect
+from .head import UltralyticsDetect, UltralyticsOBB, UltralyticsSegment, YOLODetect, YOLOSegment, v10Detect
 from .ppyoloe import PPYOLOEGraphSurgeon
 
 __all__ = ['torch_export', 'paddle_export']
@@ -31,9 +32,22 @@ warnings.filterwarnings("ignore")
 logger.configure(handlers=[{'sink': sys.stdout, 'colorize': True, 'format': "<level>[{level.name[0]}]</level> <level>{message}</level>"}])
 
 HEADS = {
-    "Detect": {"yolov3": YOLODetect, "yolov5": YOLODetect, "yolov8": UltralyticsDetect, "yolo11": UltralyticsDetect, "ultralytics": UltralyticsDetect},
+    "Detect": {
+        "yolov3": YOLODetect,
+        "yolov5": YOLODetect,
+        "yolov8": UltralyticsDetect,
+        "yolo11": UltralyticsDetect,
+        "ultralytics": UltralyticsDetect,
+    },
     "v10Detect": {"yolov10": v10Detect, "ultralytics": v10Detect},
     "OBB": {"yolov8": UltralyticsOBB, "yolo11": UltralyticsOBB, "ultralytics": UltralyticsOBB},
+    "Segment": {
+        "yolov3": YOLOSegment,
+        "yolov5": YOLOSegment,
+        "yolov8": UltralyticsSegment,
+        "yolo11": UltralyticsSegment,
+        "ultralytics": UltralyticsSegment,
+    },
 }
 
 DEFAULT_OUTPUT_NAMES = ["num_dets", "det_boxes", "det_scores", "det_classes"]
@@ -49,12 +63,14 @@ OUTPUT_NAMES = {
     "Detect": DEFAULT_OUTPUT_NAMES,
     "v10Detect": DEFAULT_OUTPUT_NAMES,
     "OBB": DEFAULT_OUTPUT_NAMES,
+    "Segment": DEFAULT_OUTPUT_NAMES + ["det_masks"],
 }
 
 DYNAMIC_AXES = {
     "Detect": DEFAULT_DYNAMIC_AXES,
     "v10Detect": DEFAULT_DYNAMIC_AXES,
     "OBB": DEFAULT_DYNAMIC_AXES,
+    "Segment": {**DEFAULT_DYNAMIC_AXES, "det_masks": {0: "batch", 2: "height", 3: "width"}},
 }
 
 YOLO_EXPORT_INFO = {
@@ -69,7 +85,7 @@ def load_model(version: str, weights: str, repo_dir: Optional[str] = None) -> Op
     Load YOLO model based on version and weights.
 
     Args:
-        version (str): YOLO version, e.g., yolov3, yolov5, yolov6, yolov7, yolov8, yolov9, yolov10, yolo11, ultralytics.
+        version (str): YOLO version, e.g., yolov3, yolov5, yolov8, yolov10, yolo11, ultralytics.
         weights (str): Path to YOLO weights for PyTorch.
         repo_dir (Optional[str], optional): Directory containing the local repository (if using torch.hub.load). Defaults to None.
 
@@ -85,17 +101,19 @@ def load_model(version: str, weights: str, repo_dir: Optional[str] = None) -> Op
 
     if version in yolo_versions_with_repo:
         repo_dir = yolo_versions_with_repo[version] if repo_dir is None else repo_dir
-        return torch.hub.load(repo_dir, 'custom', path=weights, source=source, verbose=False)
+        return torch.hub.load(repo_dir, 'custom', path=weights, source=source, _verbose=False)
     elif version in ['yolov8', 'yolov10', 'yolo11', 'ultralytics']:
         return YOLO(model=weights, verbose=False).model
-    elif version in YOLO_EXPORT_INFO:
-        logger.warning(
-            f"The official {version} repository supports exporting an ONNX model with the EfficientNMS_TRT plugin. "
-            f"Please refer to {YOLO_EXPORT_INFO[version]} for instructions on how to export it."
-        )
-        return None
     else:
-        logger.error(f"YOLO version '{version}' not supported!")
+        logger.error(
+            f"YOLO version '{version}' is unsupported for export with trtyolo CLI tool. "
+            "Please provide a valid version, e.g., yolov3, yolov5, yolov8, yolov10, yolo11, ultralytics."
+        )
+        if version in YOLO_EXPORT_INFO:
+            logger.warning(
+                f"The official {version} repository supports exporting an ONNX model with the EfficientNMS_TRT plugin. "
+                f"Please refer to {YOLO_EXPORT_INFO[version]} for instructions on how to export it."
+            )
         return None
 
 
@@ -107,7 +125,7 @@ def update_model(
 
     Args:
         model (torch.nn.Module): YOLO model to be updated.
-        version (str): YOLO version, e.g., yolov3, yolov5, yolov6, yolov7, yolov8, yolov9, yolov10, yolo11, ultralytics.
+        version (str): YOLO version, e.g., yolov3, yolov5, yolov8, yolov10, yolo11, ultralytics.
         dynamic (bool): Whether to use dynamic settings.
         max_boxes (int): Maximum number of detections to output per image.
         iou_thres (float): NMS IoU threshold for post-processing.
@@ -162,7 +180,7 @@ def torch_export(
     Args:
         weights (str): Path to YOLO weights for PyTorch.
         output (str): Directory path to save the exported model.
-        version (str): YOLO version, e.g., yolov3, yolov5, yolov6, yolov7, yolov8, yolov9, yolov10, yolo11, ultralytics.
+        version (str): YOLO version, e.g., yolov3, yolov5, yolov8, yolov10, yolo11, ultralytics.
         imgsz (Optional[int], optional): Inference image size. Defaults to 640.
         batch (Optional[int], optional): Total batch size for the model. Use -1 for dynamic batch size. Defaults to 1.
         max_boxes (Optional[int], optional): Maximum number of detections to output per image. Defaults to 100.
@@ -208,12 +226,6 @@ def torch_export(
         dynamic_axes=DYNAMIC_AXES[head_name] if dynamic else None,
     )
 
-    try:
-        import onnx
-    except ImportError:
-        logger.error('onnx not found, plaese install onnx.' 'for example: `pip install onnx>=1.12.0`.')
-        sys.exit(1)
-
     model_onnx = onnx.load(onnx_filepath)
     onnx.checker.check_model(model_onnx)
 
@@ -226,6 +238,13 @@ def torch_export(
     }
     if head_name == "OBB":
         shapes['det_boxes'] = ["batch" if dynamic else batch, max_boxes, 5]
+    elif head_name == "Segment":
+        shapes['det_masks'] = [
+            "batch" if dynamic else batch,
+            max_boxes,
+            "height" if dynamic else imgsz[0],
+            "width" if dynamic else imgsz[1],
+        ]
 
     for node in model_onnx.graph.output:
         for idx, dim in enumerate(node.type.tensor_type.shape.dim):
@@ -235,9 +254,11 @@ def torch_export(
         try:
             import onnxsim
 
-            logger.success(f"Simplifying with onnxsim {onnxsim.__version__}...")
+            logger.success(f"Simplifying ONNX model with onnxsim version {onnxsim.__version__}...")
             model_onnx, check = onnxsim.simplify(model_onnx)
             assert check, "Simplified ONNX model could not be validated"
+        except ImportError:
+            logger.warning('onnxsim not found. Please install onnx-simplifier for example: `pip install onnx-simplifier>=0.4.1`.')
         except Exception as e:
             logger.warning(f"Simplifier failure: {e}")
 
