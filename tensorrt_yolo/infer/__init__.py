@@ -1,19 +1,26 @@
-from .inference import DeployCGDet, DeployCGOBB, DeployDet, DeployOBB
-from .result import Box, DetResult, OBBResult, RotatedBox
+from .inference import DeployCGDet, DeployCGOBB, DeployCGPose, DeployCGSeg, DeployDet, DeployOBB, DeployPose, DeploySeg
+from .result import Box, DetResult, KeyPoint, OBBResult, PoseResult, RotatedBox, SegResult
 from .timer import CpuTimer, GpuTimer
 from .utils import generate_labels_with_colors, image_batches, visualize
 
 __all__ = [
-    "DeployDet",
     "DeployCGDet",
-    "DeployOBB",
     "DeployCGOBB",
-    "DetResult",
-    "OBBResult",
+    "DeployCGPose",
+    "DeployCGSeg",
+    "DeployDet",
+    "DeployOBB",
+    "DeployPose",
+    "DeploySeg",
     "Box",
+    "DetResult",
+    "KeyPoint",
+    "OBBResult",
+    "PoseResult",
     "RotatedBox",
-    "GpuTimer",
+    "SegResult",
     "CpuTimer",
+    "GpuTimer",
     "generate_labels_with_colors",
     "image_batches",
     "visualize",

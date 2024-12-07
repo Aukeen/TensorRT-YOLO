@@ -16,18 +16,19 @@
 # limitations under the License.
 # ==============================================================================
 # File    :   inference.py
-# Version :   3.0
+# Version :   5.0.0
 # Author  :   laugh12321
 # Contact :   laugh12321@vip.qq.com
 # Date    :   2024/07/03 14:06:55
-# Desc    :   Classes for deploying YOLO models, including detection, OBB, and segmentation.
+# Desc    :   Classes for deploying YOLO models, including
+#             detection, OBB, segmentation and pose estimation.
 # ==============================================================================
 from typing import Any, List, Union
 
 from .. import c_lib_wrap as C
-from .result import DetResult, OBBResult
+from .result import DetResult, OBBResult, PoseResult, SegResult
 
-__all__ = ["DeployDet", "DeployCGDet", "DeployOBB", "DeployCGOBB"]
+__all__ = ["DeployDet", "DeployCGDet", "DeployOBB", "DeployCGOBB", "DeploySeg", "DeployCGSeg", "DeployPose", "DeployCGPose"]
 
 
 class BaseDeploy:
@@ -53,7 +54,9 @@ class BaseDeploy:
         """
         return self._model.batch
 
-    def predict(self, images: Union[Any, List[Any]]) -> Union[DetResult, List[DetResult], OBBResult, List[OBBResult]]:  # type: ignore
+    def predict(
+        self, images: Union[Any, List[Any]]
+    ) -> Union[DetResult, List[DetResult], OBBResult, List[OBBResult], SegResult, List[SegResult], PoseResult, List[PoseResult]]:  # type: ignore
         """
         Predict the detection results for the given images.
 
@@ -61,8 +64,8 @@ class BaseDeploy:
             images (Union[Any, List[Any]]): A single image or a list of images for which to predict object detections.
 
         Returns:
-            Union[DetResult, List[DetResult], OBBResult, List[OBBResult]]: The detection result for the image or a list of
-            detection results for multiple images.
+            Union[DetResult, List[DetResult], OBBResult, List[OBBResult], SegResult, List[SegResult], PoseResult, List[PoseResult]]:
+            The detection result for the image or a list of detection results for multiple images.
         """
         return self._model.predict(images)
 
@@ -117,3 +120,55 @@ class DeployCGOBB(BaseDeploy):
             device (int, optional): Device index for the inference. Defaults to 0.
         """
         super().__init__(engine_file, C.inference.DeployCGOBB, cuda_memory, device)
+
+
+class DeploySeg(BaseDeploy):
+    def __init__(self, engine_file: str, cuda_memory: bool = False, device: int = 0) -> None:
+        """
+        Initialize the DeploySeg class with the given engine file.
+
+        Args:
+            engine_file (str): Path to the engine file.
+            cuda_memory (bool, optional): Flag indicating whether input data resides in GPU memory (true) or CPU memory (false). Defaults to false.
+            device (int, optional): Device index for the inference. Defaults to 0.
+        """
+        super().__init__(engine_file, C.inference.DeploySeg, cuda_memory, device)
+
+
+class DeployCGSeg(BaseDeploy):
+    def __init__(self, engine_file: str, cuda_memory: bool = False, device: int = 0) -> None:
+        """
+        Initialize the DeployCGSeg class with the given engine file.
+
+        Args:
+            engine_file (str): Path to the engine file.
+            cuda_memory (bool, optional): Flag indicating whether input data resides in GPU memory (true) or CPU memory (false). Defaults to false.
+            device (int, optional): Device index for the inference. Defaults to 0.
+        """
+        super().__init__(engine_file, C.inference.DeployCGSeg, cuda_memory, device)
+
+
+class DeployPose(BaseDeploy):
+    def __init__(self, engine_file: str, cuda_memory: bool = False, device: int = 0) -> None:
+        """
+        Initialize the DeploySeg class with the given engine file.
+
+        Args:
+            engine_file (str): Path to the engine file.
+            cuda_memory (bool, optional): Flag indicating whether input data resides in GPU memory (true) or CPU memory (false). Defaults to false.
+            device (int, optional): Device index for the inference. Defaults to 0.
+        """
+        super().__init__(engine_file, C.inference.DeployPose, cuda_memory, device)
+
+
+class DeployCGPose(BaseDeploy):
+    def __init__(self, engine_file: str, cuda_memory: bool = False, device: int = 0) -> None:
+        """
+        Initialize the DeployCGSeg class with the given engine file.
+
+        Args:
+            engine_file (str): Path to the engine file.
+            cuda_memory (bool, optional): Flag indicating whether input data resides in GPU memory (true) or CPU memory (false). Defaults to false.
+            device (int, optional): Device index for the inference. Defaults to 0.
+        """
+        super().__init__(engine_file, C.inference.DeployCGPose, cuda_memory, device)

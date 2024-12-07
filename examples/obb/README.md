@@ -1,10 +1,12 @@
 [English](README.en.md) | 简体中文
 
-# OBB Detection 模型推理示例
+# 旋转目标检测推理示例
 
-本示例以 YOLO11n-obb 模型为例，展示如何使用命令行界面（CLI）、Python 和 C++ 三种方式进行 OBB Detection 模型推理。
+本示例以 YOLO11n-obb 模型为例，展示如何使用命令行界面（CLI）、Python 和 C++ 三种方式进行旋转目标检测推理。
 
-所需的 `yolo11n-obb.pt` 与测试图片已经提供，分别保存至 `images` 文件夹与 `models` 文件夹。
+[yolo11n-obb.pt](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n-obb.pt)，[【测试图片】DOTA-part.zip](https://www.ilanzou.com/s/yK6yq8H5)
+
+请通过提供的链接下载所需的 `yolo11n-obb.pt` 模型文件和测试图片，并将模型文件保存至 `models` 文件夹，测试图片解压后存放至 `images` 文件夹。
 
 ## 模型导出
 
@@ -42,7 +44,7 @@ trtexec --onnx=models/yolo11n-obb.onnx --saveEngine=models/yolo11n-obb.engine --
 > [!NOTE] 
 > 从 4.0 版本开始新增的 `--cudaGraph` 指令可以进一步加速推理过程，但该功能仅支持静态模型。
 > 
-> 从 4.2 版本开始，支持 OBB 模型推理，并新增 `-m, --mode` 指令，用于选择 Detection 还是 OBB 模型。
+> 从 4.2 版本开始，支持 OBB 推理，并新增 `-m, --mode` 指令，用于选择 Detect 还是 OBB。
 
 1. 使用 `tensorrt_yolo` 库的 `trtyolo` 命令行工具进行推理。运行以下命令查看帮助信息：
 

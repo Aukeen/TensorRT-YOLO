@@ -29,6 +29,24 @@ Image PyArray2Image(pybind11::array &pyarray) {
     return Image(data, width, height);
 }
 
+// Convert Mask to NumPy array
+pybind11::array_t<uint8_t> Mask2PyArray(const deploy::Mask &mask) {
+    if (mask.width <= 0 || mask.height <= 0) {
+        throw std::invalid_argument("Mask dimensions must be positive.");
+    }
+    if (static_cast<size_t>(mask.width * mask.height) != mask.data.size()) {
+        throw std::invalid_argument("Data size does not match the specified width and height.");
+    }
+
+    return pybind11::array_t<uint8_t>(pybind11::buffer_info(
+        const_cast<uint8_t *>(mask.data.data()),
+        sizeof(uint8_t),
+        pybind11::format_descriptor<uint8_t>::format(),
+        2,
+        {mask.height, mask.width},
+        {sizeof(uint8_t) * mask.width, sizeof(uint8_t)}));
+}
+
 // Bind utility classes
 void BindUtils(pybind11::module &m) {
     m.doc() = "Python bindings for CpuTimer and GpuTimer using Pybind11";
@@ -82,6 +100,25 @@ void BindResult(pybind11::module &m) {
                 << ", theta=" << rbox.theta << ")";
             return oss.str();
         });
+
+    // Bind KeyPoint structure
+    pybind11::class_<KeyPoint>(m, "KeyPoint")
+        .def(pybind11::init<>())
+        .def(pybind11::init<float, float, std::optional<float>>(),
+             pybind11::arg("x"), pybind11::arg("y"), pybind11::arg("conf") = std::nullopt)
+        .def_readwrite("x", &KeyPoint::x)
+        .def_readwrite("y", &KeyPoint::y)
+        .def_property("conf", [](const KeyPoint &kp) { return kp.conf; }, [](KeyPoint &kp, const std::optional<float> &value) { kp.conf = value; })
+        .def("__str__", [](const KeyPoint &kp) {
+        std::ostringstream oss;
+        oss << "KeyPoint(x=" << kp.x << ", y=" << kp.y;
+        if (kp.conf) {
+            oss << ", conf=" << *kp.conf;
+        } else {
+            oss << ", conf=None";
+        }
+        oss << ")";
+        return oss.str(); });
 
     // Bind DetResult structure
     pybind11::class_<DetResult>(m, "DetResult")
@@ -168,12 +205,162 @@ void BindResult(pybind11::module &m) {
             obr.classes = t[2].cast<std::vector<int>>();
             obr.scores = t[3].cast<std::vector<float>>();
             return obr; }));
+
+    // Bind SegResult structure
+    pybind11::class_<SegResult, DetResult>(m, "SegResult")
+        .def(pybind11::init<>())
+        .def_property(
+            "masks",
+            // Getter: Convert masks to list of numpy arrays
+            [](const SegResult &sgr) {
+                pybind11::list masks_list;
+                for (const auto &mask : sgr.masks) {
+                    masks_list.append(Mask2PyArray(mask));
+                }
+                return masks_list;
+            },
+            // Setter: Convert list of numpy arrays back to Mask
+            [](SegResult &sgr, pybind11::list masks_list) {
+                std::vector<Mask> masks_vec;
+                for (auto item : masks_list) {
+                    auto arr = item.cast<pybind11::array_t<uint8_t>>();
+                    auto buf = arr.request();
+                    if (buf.ndim != 2) {
+                        throw std::invalid_argument("Each mask must be a 2D numpy array.");
+                    }
+                    deploy::Mask mask;
+                    mask.width  = buf.shape[1];
+                    mask.height = buf.shape[0];
+                    mask.data.assign(static_cast<uint8_t *>(buf.ptr), static_cast<uint8_t *>(buf.ptr) + buf.size);
+                    masks_vec.push_back(std::move(mask));
+                }
+                sgr.masks = std::move(masks_vec);
+            })
+        .def("__copy__", [](const SegResult &self) {
+            return SegResult(self);
+        })
+        .def("__deepcopy__", [](const SegResult &self, pybind11::dict) {
+            return SegResult(self);
+        })
+        .def("__str__", [](const SegResult &sgr) {
+            std::ostringstream oss;
+            oss << "SegResult(num=" << sgr.num << ", classes=[";
+            for (size_t i = 0; i < sgr.classes.size(); ++i) {
+                oss << sgr.classes[i];
+                if (i != sgr.classes.size() - 1) oss << ", ";
+            }
+            oss << "], scores=[";
+            for (size_t i = 0; i < sgr.scores.size(); ++i) {
+                oss << sgr.scores[i];
+                if (i != sgr.scores.size() - 1) oss << ", ";
+            }
+            oss << "], boxes=[\n";
+            for (const auto &box : sgr.boxes) {
+                oss << "    Box(left=" << box.left << ", top=" << box.top
+                    << ", right=" << box.right << ", bottom=" << box.bottom << "),\n";
+            }
+            oss << "  ], masks=[";
+            for (size_t i = 0; i < sgr.masks.size(); ++i) {
+                oss << "    Mask(width=" << sgr.masks[i].width << ", height=" << sgr.masks[i].height << "),\n";
+            }
+            oss << "  ])";
+            return oss.str();
+        })
+        .def(pybind11::pickle([](const SegResult &sgr) {
+            pybind11::list masks_list;
+            for (const auto &mask : sgr.masks) {
+                masks_list.append(Mask2PyArray(mask));
+            }
+            return pybind11::make_tuple(
+                sgr.num,
+                sgr.boxes,
+                sgr.classes,
+                sgr.scores,
+                masks_list); }, [](pybind11::tuple t) {
+            if (t.size() != 5)
+                throw std::runtime_error("Invalid state!");
+
+            SegResult sgr;
+            sgr.num = t[0].cast<int>();
+            sgr.boxes = t[1].cast<std::vector<Box>>();
+            sgr.classes = t[2].cast<std::vector<int>>();
+            sgr.scores = t[3].cast<std::vector<float>>();
+
+            pybind11::list masks_list = t[4].cast<pybind11::list>();
+            for (auto item : masks_list) {
+                auto arr = item.cast<pybind11::array_t<uint8_t>>();
+                auto buf = arr.request();
+                deploy::Mask mask;
+                mask.width = buf.shape[1];
+                mask.height = buf.shape[0];
+                mask.data.assign(static_cast<uint8_t *>(buf.ptr), static_cast<uint8_t *>(buf.ptr) + buf.size);
+                sgr.masks.push_back(std::move(mask));
+            }
+            return sgr; }));
+
+    // Bind PoseResult structure
+    pybind11::class_<PoseResult, DetResult>(m, "PoseResult")
+        .def(pybind11::init<>())
+        .def_readwrite("kpts", &PoseResult::kpts)
+        .def("__copy__", [](const PoseResult &self) {
+            return PoseResult(self);
+        })
+        .def("__deepcopy__", [](const PoseResult &self, pybind11::dict) {
+            return PoseResult(self);
+        })
+        .def("__str__", [](const PoseResult &pr) {
+            std::ostringstream oss;
+            oss << "PoseResult(num=" << pr.num << ", classes=[";
+            for (size_t i = 0; i < pr.classes.size(); ++i) {
+                oss << pr.classes[i];
+                if (i != pr.classes.size() - 1) oss << ", ";
+            }
+            oss << "], scores=[";
+            for (size_t i = 0; i < pr.scores.size(); ++i) {
+                oss << pr.scores[i];
+                if (i != pr.scores.size() - 1) oss << ", ";
+            }
+            oss << "], boxes=[\n";
+            for (size_t i = 0; i < pr.boxes.size(); ++i) {
+                oss << "    Box(left=" << pr.boxes[i].left << ", top=" << pr.boxes[i].top
+                    << ", right=" << pr.boxes[i].right << ", bottom=" << pr.boxes[i].bottom << "),\n";
+            }
+            oss << "], kpts=[\n";
+            for (size_t i = 0; i < pr.kpts.size(); ++i) {
+                oss << "    [";
+                for (size_t j = 0; j < pr.kpts[i].size(); ++j) {
+                    oss << "KeyPoint(x=" << pr.kpts[i][j].x << ", y=" << pr.kpts[i][j].y;
+                    if (pr.kpts[i][j].conf) {
+                        oss << ", conf=" << *pr.kpts[i][j].conf;
+                    } else {
+                        oss << ", conf=None";
+                    }
+                    oss << ")";
+                    if (j != pr.kpts[i].size() - 1) oss << ", ";
+                }
+                oss << "]";
+                if (i != pr.kpts.size() - 1) oss << ",\n";
+            }
+            oss << "])";
+            return oss.str();
+        })
+        .def(pybind11::pickle([](const PoseResult &pr) { return pybind11::make_tuple(pr.num, pr.boxes, pr.classes, pr.scores, pr.kpts); }, [](pybind11::tuple t) {
+            if (t.size() != 5)
+                throw std::runtime_error("Invalid state!");
+
+            PoseResult pr;
+            pr.num = t[0].cast<int>();
+            pr.boxes = t[1].cast<std::vector<Box>>();
+            pr.classes = t[2].cast<std::vector<int>>();
+            pr.scores = t[3].cast<std::vector<float>>();
+            pr.kpts = t[4].cast<std::vector<std::vector<KeyPoint>>>();
+            return pr; }));
 }
 
 // Bind inference class template
 template <typename ClassType>
 void BindClsTemplate(pybind11::module &m, const std::string &className) {
-    pybind11::class_<ClassType>(m, className.c_str())
+    pybind11::class_<ClassType, std::unique_ptr<ClassType>>(m, className.c_str())
         .def(pybind11::init<const std::string &, bool, int>(),
              pybind11::arg("file"), pybind11::arg("cudaMem") = false, pybind11::arg("device") = 0)
         .def(
@@ -193,7 +380,7 @@ void BindClsTemplate(pybind11::module &m, const std::string &className) {
 
 // Bind inference classes
 void BindInference(pybind11::module &m) {
-    m.doc() = "Bindings for inference classes like DeployDet, DeployCGDet, DeployOBB and DeployCGOBB";
+    m.doc() = "Bindings for inference classes, including DeployDet, DeployCGDet, DeployOBB, DeployCGOBB, DeploySeg, DeployCGSeg, DeployPose, and DeployCGPose.";
 
     // bind DeployDet
     BindClsTemplate<DeployDet>(m, "DeployDet");
@@ -206,6 +393,18 @@ void BindInference(pybind11::module &m) {
 
     // bind DeployCGOBB
     BindClsTemplate<DeployCGOBB>(m, "DeployCGOBB");
+
+    // bind DeploySeg
+    BindClsTemplate<DeploySeg>(m, "DeploySeg");
+
+    // bind DeployCGSeg
+    BindClsTemplate<DeployCGSeg>(m, "DeployCGSeg");
+
+    // bind DeploySeg
+    BindClsTemplate<DeployPose>(m, "DeployPose");
+
+    // bind DeployCGSeg
+    BindClsTemplate<DeployCGPose>(m, "DeployCGPose");
 }
 
 // Define the pydeploy module

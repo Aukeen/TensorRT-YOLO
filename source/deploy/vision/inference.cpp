@@ -84,6 +84,93 @@ OBBResult BaseTemplate<OBBResult>::postProcess(const int idx) {
     return result;
 }
 
+template <>
+SegResult BaseTemplate<SegResult>::postProcess(const int idx) {
+    int maskHeight = this->tensorInfos[5].dims.d[2];
+    int maskWidth  = this->tensorInfos[5].dims.d[3];
+
+    int      num     = static_cast<int*>(this->tensorInfos[1].tensor.host())[idx];
+    float*   boxes   = static_cast<float*>(this->tensorInfos[2].tensor.host()) + idx * this->tensorInfos[2].dims.d[1] * this->tensorInfos[2].dims.d[2];
+    float*   scores  = static_cast<float*>(this->tensorInfos[3].tensor.host()) + idx * this->tensorInfos[3].dims.d[1];
+    int*     classes = static_cast<int*>(this->tensorInfos[4].tensor.host()) + idx * this->tensorInfos[4].dims.d[1];
+    uint8_t* masks   = static_cast<uint8_t*>(this->tensorInfos[5].tensor.host()) + idx * this->tensorInfos[5].dims.d[1] * maskHeight * maskWidth;
+
+    SegResult result;
+    result.num = num;
+
+    int boxSize = this->tensorInfos[2].dims.d[2];
+    for (int i = 0; i < num; ++i) {
+        // Apply affine transformation
+        float left   = boxes[i * boxSize];
+        float top    = boxes[i * boxSize + 1];
+        float right  = boxes[i * boxSize + 2];
+        float bottom = boxes[i * boxSize + 3];
+
+        transforms[idx].transform(left, top, &left, &top);
+        transforms[idx].transform(right, bottom, &right, &bottom);
+
+        result.boxes.emplace_back(Box{left, top, right, bottom});
+        result.scores.emplace_back(scores[i]);
+        result.classes.emplace_back(classes[i]);
+
+        Mask mask(maskWidth - 2 * transforms[idx].dw, maskHeight - 2 * transforms[idx].dh);
+
+        // Crop the mask's edge area, applying offset to adjust the position
+        int startIdx = i * maskHeight * maskWidth;
+        int srcIndex = startIdx + transforms[idx].dh * maskWidth + transforms[idx].dw;
+        for (int y = 0; y < mask.height; ++y) {
+            std::memcpy(&mask.data[y * mask.width], masks + srcIndex, mask.width);
+            srcIndex += maskWidth;
+        }
+
+        result.masks.emplace_back(std::move(mask));
+    }
+
+    return result;
+}
+
+template <>
+PoseResult BaseTemplate<PoseResult>::postProcess(const int idx) {
+    int nkpt = this->tensorInfos[5].dims.d[2];
+    int ndim = this->tensorInfos[5].dims.d[3];
+
+    int    num     = *(static_cast<int*>(this->tensorInfos[1].tensor.host()) + idx);
+    float* boxes   = static_cast<float*>(this->tensorInfos[2].tensor.host()) + idx * this->tensorInfos[2].dims.d[1] * this->tensorInfos[2].dims.d[2];
+    float* scores  = static_cast<float*>(this->tensorInfos[3].tensor.host()) + idx * this->tensorInfos[3].dims.d[1];
+    int*   classes = static_cast<int*>(this->tensorInfos[4].tensor.host()) + idx * this->tensorInfos[4].dims.d[1];
+    float* kpts    = static_cast<float*>(this->tensorInfos[5].tensor.host()) + idx * this->tensorInfos[5].dims.d[1] * nkpt * ndim;
+
+    PoseResult result;
+    result.num = num;
+
+    int boxSize = this->tensorInfos[2].dims.d[2];
+    for (int i = 0; i < num; ++i) {
+        // Apply affine transformation
+        float left   = boxes[i * boxSize];
+        float top    = boxes[i * boxSize + 1];
+        float right  = boxes[i * boxSize + 2];
+        float bottom = boxes[i * boxSize + 3];
+
+        transforms[idx].transform(left, top, &left, &top);
+        transforms[idx].transform(right, bottom, &right, &bottom);
+
+        result.boxes.emplace_back(Box{left, top, right, bottom});
+        result.scores.emplace_back(scores[i]);
+        result.classes.emplace_back(classes[i]);
+
+        std::vector<KeyPoint> keypoints;
+        for (int j = 0; j < nkpt; ++j) {
+            float x = kpts[i * nkpt * ndim + j * ndim];
+            float y = kpts[i * nkpt * ndim + j * ndim + 1];
+            transforms[idx].transform(x, y, &x, &y);
+            keypoints.emplace_back((ndim == 2) ? KeyPoint(x, y) : KeyPoint(x, y, kpts[i * nkpt * ndim + j * ndim + 2]));
+        }
+        result.kpts.emplace_back(std::move(keypoints));
+    }
+
+    return result;
+}
+
 // Constructor to initialize DeployTemplate with a model file, optional CUDA memory flag, and device index.
 template <typename T>
 DeployTemplate<T>::DeployTemplate(const std::string& file, bool cudaMem, int device) : BaseTemplate<T>(file, cudaMem, device) {
@@ -424,14 +511,14 @@ void DeployCGTemplate<T>::createGraph() {
     if (this->batch > 1) {
         for (int i = 0; i < this->batch; i++) {
             CUDA(cudaEventRecord(this->inputEvents[i * 2], this->inferStream));
-            CUDA(cudaStreamWaitEvent(this->inputStreams[i], this->inputEvents[i * 2]));
+            CUDA(cudaStreamWaitEvent(this->inputStreams[i], this->inputEvents[i * 2], 0));
 
             uint8_t* input  = static_cast<uint8_t*>(this->imageTensor->device()) + i * this->inputSize * sizeof(uint8_t);
             float*   output = static_cast<float*>(this->tensorInfos[0].tensor.device()) + i * this->inputSize;
             cudaWarpAffine(input, this->width, this->height, output, this->width, this->height, this->transforms[i].matrix, this->inputStreams[i]);
 
             CUDA(cudaEventRecord(this->inputEvents[i * 2 + 1], this->inputStreams[i]));
-            CUDA(cudaStreamWaitEvent(this->inferStream, this->inputEvents[i * 2 + 1]));
+            CUDA(cudaStreamWaitEvent(this->inferStream, this->inputEvents[i * 2 + 1], 0));
         }
     } else {
         cudaWarpAffine(static_cast<uint8_t*>(this->imageTensor->device()), this->width, this->height, static_cast<float*>(this->tensorInfos[0].tensor.device()), this->width, this->height, this->transforms[0].matrix, this->inferStream);

@@ -1,7 +1,11 @@
-# Xmake Cache
+# Build Cache
 .xmake/
 build/
 cmake-build*/
+
+# build libs
+lib/
+tensorrt_yolo/libs/
 
 # VSCode Cache
 .vscode
@@ -28,15 +32,29 @@ demo/**/*.webp
 demo/**/*.pt
 demo/**/*.onnx
 demo/**/*.engine
+venv/
 
 # python package
 dist/
 tensorrt_yolo.egg-info/
 tensorrt_yolo/c_lib_wrap.py
 
-# build libs
-lib/
-tensorrt_yolo/libs/
+# output Cache
+output/
+
+# example images
+examples/**/*.jpg
+examples/**/*.jpeg
+examples/**/*.png
+examples/**/*.gif
+examples/**/*.bmp
+examples/**/*.tiff
+examples/**/*.webp
+
+# example models
+examples/**/*.pt
+examples/**/*.onnx
+examples/**/*.engine
 
 tests/
 

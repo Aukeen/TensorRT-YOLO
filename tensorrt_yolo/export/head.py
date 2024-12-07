@@ -16,7 +16,7 @@
 # limitations under the License.
 # ==============================================================================
 # File    :   head.py
-# Version :   6.0
+# Version :   5.0.0
 # Author  :   laugh12321
 # Contact :   laugh12321@vip.qq.com
 # Date    :   2024/04/22 09:45:11
@@ -29,11 +29,11 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 from torch import Tensor, Value, nn
-from ultralytics.nn.modules import OBB, Conv, Detect, Proto
+from ultralytics.nn.modules import OBB, Conv, Detect, Pose, Proto, Segment
 from ultralytics.utils.checks import check_version
 from ultralytics.utils.tal import make_anchors
 
-__all__ = ["YOLODetect", "YOLOSegment", "V10Detect", "UltralyticsDetect", "UltralyticsOBB", "UltralyticsSegment"]  # noqa: F822
+__all__ = ["YOLODetect", "YOLOSegment", "V10Detect", "UltralyticsDetect", "UltralyticsOBB", "UltralyticsSegment", "UltralyticsPose"]  # noqa: F822
 
 
 class EfficientNMS_TRT(torch.autograd.Function):
@@ -463,43 +463,7 @@ class UltralyticsOBB(OBB):
         )
 
 
-class v10Detect(UltralyticsDetect):
-    """
-    v10 Detection head from https://arxiv.org/pdf/2405.14458.
-
-    Args:
-        nc (int): Number of classes.
-        ch (tuple): Tuple of channel sizes.
-
-    Attributes:
-        max_det (int): Maximum number of detections.
-
-    Methods:
-        __init__(self, nc=80, ch=()): Initializes the v10Detect object.
-        forward(self, x): Performs forward pass of the v10Detect module.
-        bias_init(self): Initializes biases of the Detect module.
-
-    """
-
-    end2end = True
-
-    def __init__(self, nc=80, ch=()):
-        """Initializes the v10Detect object with the specified number of classes and input channels."""
-        super().__init__(nc, ch)
-        c3 = max(ch[0], min(self.nc, 100))  # channels
-        # Light cls head
-        self.cv3 = nn.ModuleList(
-            nn.Sequential(
-                nn.Sequential(Conv(x, x, 3, g=x), Conv(x, c3, 1)),
-                nn.Sequential(Conv(c3, c3, 3, g=c3), Conv(c3, c3, 1)),
-                nn.Conv2d(c3, self.nc, 1),
-            )
-            for x in ch
-        )
-        self.one2one_cv3 = copy.deepcopy(self.cv3)
-
-
-class UltralyticsSegment(Detect):
+class UltralyticsSegment(Segment):
     """Ultralytics Segment head for segmentation models."""
 
     max_det = 100
@@ -554,3 +518,103 @@ class UltralyticsSegment(Detect):
         dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
 
         return dbox, cls.sigmoid()
+
+
+class UltralyticsPose(Pose):
+    """Ultralytics Pose head for keypoints models."""
+
+    max_det = 100
+    iou_thres = 0.45
+    conf_thres = 0.25
+
+    def forward(self, x):
+        """Perform forward pass through YOLO model and return predictions."""
+        bs = x[0].shape[0]  # batch size
+        kpt = torch.cat([self.cv4[i](x[i]).view(bs, self.nk, -1) for i in range(self.nl)], -1)  # (bs, 17*3, h*w)
+
+        # Detect forward
+        x = [torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1) for i in range(self.nl)]
+        dbox, cls = self._inference(x)
+
+        ## Using transpose for compatibility with EfficientIdxNMS_TRT
+        num_dets, det_boxes, det_scores, det_classes, det_indices = EfficientIdxNMS_TRT.apply(
+            dbox.transpose(1, 2),
+            cls.transpose(1, 2),
+            self.iou_thres,
+            self.conf_thres,
+            self.max_det,
+        )
+
+        batch_indices = (
+            torch.arange(bs, device=det_classes.device, dtype=det_classes.dtype).unsqueeze(1).expand(-1, self.max_det).reshape(-1)
+        )
+        det_indices = det_indices.view(-1)
+        pred_kpt = self.kpts_decode(bs, kpt)
+
+        return (
+            num_dets,
+            det_boxes,
+            det_scores,
+            det_classes,
+            pred_kpt[batch_indices, det_indices].view(bs, self.max_det, self.kpt_shape[0], self.kpt_shape[1]),
+        )
+
+    def _inference(self, x):
+        """Decode predicted bounding boxes and class probabilities based on multiple-level feature maps."""
+        # Inference path
+        shape = x[0].shape  # BCHW
+        x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
+        if self.dynamic or self.shape != shape:
+            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
+            self.shape = shape
+
+        box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
+        dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
+
+        return dbox, cls.sigmoid()
+
+    def kpts_decode(self, bs, kpts):
+        """Decodes keypoints."""
+        ndim = self.kpt_shape[1]
+        # NCNN fix
+        y = kpts.view(bs, *self.kpt_shape, -1)
+        a = (y[:, :, :2] * 2.0 + (self.anchors - 0.5)) * self.strides
+        if ndim == 3:
+            a = torch.cat((a, y[:, :, 2:3].sigmoid()), 2)
+        return a.view(bs, self.nk, -1).transpose(1, 2)
+
+
+class v10Detect(UltralyticsDetect):
+    """
+    v10 Detection head from https://arxiv.org/pdf/2405.14458.
+
+    Args:
+        nc (int): Number of classes.
+        ch (tuple): Tuple of channel sizes.
+
+    Attributes:
+        max_det (int): Maximum number of detections.
+
+    Methods:
+        __init__(self, nc=80, ch=()): Initializes the v10Detect object.
+        forward(self, x): Performs forward pass of the v10Detect module.
+        bias_init(self): Initializes biases of the Detect module.
+
+    """
+
+    end2end = True
+
+    def __init__(self, nc=80, ch=()):
+        """Initializes the v10Detect object with the specified number of classes and input channels."""
+        super().__init__(nc, ch)
+        c3 = max(ch[0], min(self.nc, 100))  # channels
+        # Light cls head
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(Conv(x, x, 3, g=x), Conv(x, c3, 1)),
+                nn.Sequential(Conv(c3, c3, 3, g=c3), Conv(c3, c3, 1)),
+                nn.Conv2d(c3, self.nc, 1),
+            )
+            for x in ch
+        )
+        self.one2one_cv3 = copy.deepcopy(self.cv3)

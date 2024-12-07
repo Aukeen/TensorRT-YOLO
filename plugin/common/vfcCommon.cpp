@@ -81,17 +81,19 @@ extern "C" TENSORRTAPI void setLoggerFinder(nvinfer1::ILoggerFinder* finder)
 #if (TENSORRT_VERSION >= 100000)
 extern "C" TENSORRTAPI IPluginCreatorInterface* const* getCreators(int32_t& nbCreators)
 {
-    nbCreators = 1;
+    nbCreators = 2;
     static EfficientRotatedNMSPluginCreator efficientRotatedNMSPluginCreator;
     static EfficientIdxNMSPluginCreator efficientIdxNMSPluginCreator;
     static IPluginCreatorInterface* const kPLUGIN_CREATOR_LIST[] = {&efficientRotatedNMSPluginCreator, &efficientIdxNMSPluginCreator};
     return kPLUGIN_CREATOR_LIST;
 
 }
-#else
+#endif
+
+#if (TENSORRT_VERSION < 100100)
 extern "C" TENSORRTAPI IPluginCreator* const* getPluginCreators(int32_t& nbCreators)
 {
-    nbCreators = 1;
+    nbCreators = 2;
     static EfficientRotatedNMSPluginCreator efficientRotatedNMSPluginCreator;
     static EfficientIdxNMSPluginCreator efficientIdxNMSPluginCreator;
     static IPluginCreator* const kPLUGIN_CREATOR_LIST[] = {&efficientRotatedNMSPluginCreator, &efficientIdxNMSPluginCreator};
